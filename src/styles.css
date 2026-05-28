@@ -1,0 +1,106 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--destructive);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Midnight Tactical — dark command center */
+:root {
+  --radius: 0.5rem;
+  --background: oklch(0.14 0.03 270);
+  --foreground: oklch(0.96 0.01 250);
+  --card: oklch(0.18 0.04 268);
+  --card-foreground: oklch(0.96 0.01 250);
+  --popover: oklch(0.18 0.04 268);
+  --popover-foreground: oklch(0.96 0.01 250);
+  --primary: oklch(0.62 0.22 270);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.24 0.05 270);
+  --secondary-foreground: oklch(0.96 0.01 250);
+  --muted: oklch(0.22 0.04 270);
+  --muted-foreground: oklch(0.68 0.03 260);
+  --accent: oklch(0.30 0.10 270);
+  --accent-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.62 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.72 0.18 155);
+  --warning: oklch(0.78 0.17 75);
+  --border: oklch(0.28 0.04 270);
+  --input: oklch(0.24 0.04 270);
+  --ring: oklch(0.62 0.22 270);
+  --chart-1: oklch(0.62 0.22 270);
+  --chart-2: oklch(0.72 0.18 155);
+  --chart-3: oklch(0.78 0.17 75);
+  --chart-4: oklch(0.62 0.22 25);
+  --chart-5: oklch(0.70 0.15 220);
+  --grid-line: oklch(0.22 0.04 270);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body { background-color: var(--color-background); color: var(--color-foreground); }
+  body {
+    font-family: var(--font-display);
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 48px 48px;
+    background-position: -1px -1px;
+    background-attachment: fixed;
+  }
+  h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.01em; }
+  .font-mono, code, pre { font-family: var(--font-mono); }
+}
+
+@layer utilities {
+  .glow-primary { box-shadow: 0 0 40px -10px color-mix(in oklab, var(--primary) 60%, transparent); }
+  .glow-success { box-shadow: 0 0 40px -10px color-mix(in oklab, var(--success) 60%, transparent); }
+  .glow-danger  { box-shadow: 0 0 40px -10px color-mix(in oklab, var(--destructive) 60%, transparent); }
+  .text-success { color: var(--success); }
+  .text-warning { color: var(--warning); }
+  .bg-success-soft { background: color-mix(in oklab, var(--success) 15%, transparent); }
+  .bg-warning-soft { background: color-mix(in oklab, var(--warning) 15%, transparent); }
+  .bg-danger-soft { background: color-mix(in oklab, var(--destructive) 15%, transparent); }
+  .bg-primary-soft { background: color-mix(in oklab, var(--primary) 15%, transparent); }
+  .border-success { border-color: color-mix(in oklab, var(--success) 50%, transparent); }
+  .border-warning { border-color: color-mix(in oklab, var(--warning) 50%, transparent); }
+  .border-danger { border-color: color-mix(in oklab, var(--destructive) 50%, transparent); }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
+}

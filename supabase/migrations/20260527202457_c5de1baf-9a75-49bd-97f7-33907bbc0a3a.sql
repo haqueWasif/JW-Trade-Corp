@@ -1,0 +1,1 @@
+ALTER TABLE public.daily_checklists ADD COLUMN IF NOT EXISTS strategy_model TEXT;
