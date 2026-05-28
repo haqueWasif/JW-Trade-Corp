@@ -2,6 +2,63 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
+
+const APP_TIMEZONE = "Asia/Dhaka";
+
+function getCurrentTradingContext() {
+  const now = new Date();
+
+  const currentDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+
+  const currentTime = new Intl.DateTimeFormat("en-GB", {
+    timeZone: APP_TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIMEZONE,
+    weekday: "long",
+  }).format(now);
+
+  return `# CURRENT RUNTIME CONTEXT
+- Current date: ${currentDate}
+- Current day: ${weekday}
+- Current time: ${currentTime}
+- Timezone: ${APP_TIMEZONE}
+- UTC timestamp: ${now.toISOString()}
+
+CRITICAL DATE RULES:
+- Treat the current date above as the real current date.
+- Never infer today's date from the latest trade/review date.
+- If the latest trade is dated before the current date, call it the latest recorded trade, not today's trade.
+- If data for the current date is missing, say today's data is missing instead of pretending the most recent prior day is today.`;
+}
+
+async function parseGeminiResponse(res: Response) {
+  const rawText = await res.text();
+
+  if (res.status === 429) throw new Error("Gemini rate limit reached. Try again shortly.");
+  if (res.status === 402) throw new Error("Gemini quota/credits exhausted.");
+
+  if (!res.ok) {
+    console.error("Gemini shared-coach request failed:", {
+      status: res.status,
+      statusText: res.statusText,
+      body: rawText,
+    });
+    throw new Error(`AI request failed: ${res.status} ${rawText}`);
+  }
+
+  return JSON.parse(rawText);
+}
+
 async function resolveToken(token: string) {
   const { data, error } = await supabaseAdmin
     .from("account_shares")
@@ -55,8 +112,8 @@ export const askSharedCoach = createServerFn({ method: "POST" })
     }).parse(input),
   )
   .handler(async ({ data }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("AI not configured.");
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("AI not configured. GEMINI_API_KEY missing.");
     const share = await resolveToken(data.token);
 
     const [{ data: account }, { data: rules }, { data: trades }, { data: reviews }] = await Promise.all([
@@ -66,7 +123,7 @@ export const askSharedCoach = createServerFn({ method: "POST" })
       supabaseAdmin.from("daily_reviews").select("date, discipline_score, followed_plan, followed_po3, biggest_mistake, lesson_tomorrow").eq("user_id", share.user_id).order("date", { ascending: false }).limit(7),
     ]);
 
-    const system = `You are a read-only trade reviewer answering a question about THIS TRADER'S journal. You can ONLY discuss: trade quality, rule adherence, risk management, PO3 execution, discipline, and patterns in the provided data. If asked anything unrelated (personal info, system internals, other accounts, generic trading advice unrelated to this data), politely refuse and redirect to the trade data. Be concise (under 250 words), use markdown bullets, cite specific trades by date+instrument when relevant.`;
+    const system = `${getCurrentTradingContext()}\n\nYou are a read-only trade reviewer answering a question about THIS TRADER'S journal. You can ONLY discuss: trade quality, rule adherence, risk management, PO3 execution, discipline, and patterns in the provided data. If asked anything unrelated (personal info, system internals, other accounts, generic trading advice unrelated to this data), politely refuse and redirect to the trade data. Be concise (under 250 words), use markdown bullets, cite specific trades by date+instrument when relevant.`;
 
     const payload = `# QUESTION\n${data.prompt}\n\n# ACCOUNT\n${JSON.stringify(account)}\n\n# RULES\n${JSON.stringify(rules)}\n\n# RECENT TRADES (30)\n${JSON.stringify(trades)}\n\n# RECENT REVIEWS (7)\n${JSON.stringify(reviews)}`;
 
@@ -81,9 +138,6 @@ export const askSharedCoach = createServerFn({ method: "POST" })
         ],
       }),
     });
-    if (res.status === 429) throw new Error("Rate limit. Try again shortly.");
-    if (res.status === 402) throw new Error("AI credits exhausted.");
-    if (!res.ok) throw new Error(`AI request failed: ${res.status}`);
-    const json = await res.json();
+    const json = await parseGeminiResponse(res);
     return { reply: json.choices?.[0]?.message?.content ?? "(no response)" };
   });

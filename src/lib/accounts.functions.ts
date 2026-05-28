@@ -2,6 +2,63 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
+
+const APP_TIMEZONE = "Asia/Dhaka";
+
+function getCurrentTradingContext() {
+  const now = new Date();
+
+  const currentDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+
+  const currentTime = new Intl.DateTimeFormat("en-GB", {
+    timeZone: APP_TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIMEZONE,
+    weekday: "long",
+  }).format(now);
+
+  return `# CURRENT RUNTIME CONTEXT
+- Current date: ${currentDate}
+- Current day: ${weekday}
+- Current time: ${currentTime}
+- Timezone: ${APP_TIMEZONE}
+- UTC timestamp: ${now.toISOString()}
+
+CRITICAL DATE RULES:
+- Treat the current date above as the real current date.
+- Never infer today's date from the latest trade/review/checklist date.
+- If the latest trade is dated before the current date, describe it as the latest recorded trade, not as today's trade.
+- If data for the current date is missing, say that today's data is missing instead of pretending the most recent prior day is today.`;
+}
+
+async function parseGeminiJsonResponse(res: Response) {
+  const rawText = await res.text();
+
+  if (res.status === 429) throw new Error("Gemini rate limit reached. Try again shortly.");
+  if (res.status === 402) throw new Error("Gemini quota/credits exhausted.");
+
+  if (!res.ok) {
+    console.error("Gemini request failed:", {
+      status: res.status,
+      statusText: res.statusText,
+      body: rawText,
+    });
+    throw new Error(`AI request failed: ${res.status} ${rawText}`);
+  }
+
+  return JSON.parse(rawText);
+}
+
 const FIRM_KNOWLEDGE = `Known prop firm rules (use as defaults when user doesn't specify):
 
 FundingPips Standard 2-Step: phase1_target 8%, phase2_target 5%, daily_loss 5%, max_loss 10%, min_trading_days 3, profit_split 80, weekend_holding true, news_trading true.
@@ -33,7 +90,7 @@ export const parseAccountSpec = createServerFn({ method: "POST" })
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("AI not configured. GEMINI_API_KEY missing.");
 
-    const system = `You parse trader-supplied prop-firm account specs into structured JSON. Use the firm knowledge below to fill defaults the user didn't mention. If something is genuinely unknown, leave nullable fields null. Be precise with numbers.\n\n${FIRM_KNOWLEDGE}`;
+    const system = `${getCurrentTradingContext()}\n\nYou parse trader-supplied prop-firm account specs into structured JSON. Use the firm knowledge below to fill defaults the user did not mention. If something is genuinely unknown, omit the optional nullable fields; the app will store them as null. Be precise with numbers. You must call submit_account exactly once.\n\n${FIRM_KNOWLEDGE}`;
 
     const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
@@ -65,12 +122,12 @@ export const parseAccountSpec = createServerFn({ method: "POST" })
                     daily_loss_pct: { type: "number" },
                     max_loss_pct: { type: "number" },
                     min_trading_days: { type: "integer" },
-                    phase1_max_days: { type: ["integer", "null"] },
-                    phase2_max_days: { type: ["integer", "null"] },
-                    profit_split_pct: { type: ["number", "null"] },
+                    phase1_max_days: { type: "integer" },
+                    phase2_max_days: { type: "integer" },
+                    profit_split_pct: { type: "number" },
                     weekend_holding_allowed: { type: "boolean" },
                     news_trading_allowed: { type: "boolean" },
-                    consistency_rule_pct: { type: ["number", "null"] },
+                    consistency_rule_pct: { type: "number" },
                     inactivity_days: { type: "integer" },
                     notes: { type: "string" },
                   },
@@ -81,19 +138,26 @@ export const parseAccountSpec = createServerFn({ method: "POST" })
             },
           },
         }],
-        tool_choice: { type: "function", function: { name: "submit_account" } },
+        tool_choice: "auto",
       }),
     });
 
-    if (res.status === 429) throw new Error("Rate limit. Try again shortly.");
-    if (res.status === 402) throw new Error("AI credits exhausted.");
-    if (!res.ok) throw new Error(`AI request failed: ${res.status}`);
-
-    const json = await res.json();
+    const json = await parseGeminiJsonResponse(res);
     const call = json.choices?.[0]?.message?.tool_calls?.[0];
-    if (!call) throw new Error("AI did not return structured data.");
-    const parsed = JSON.parse(call.function.arguments);
-    return parsed;
+
+    if (call?.function?.arguments) {
+      return JSON.parse(call.function.arguments);
+    }
+
+    // Fallback for cases where Gemini answers with JSON text instead of a tool call.
+    const content = json.choices?.[0]?.message?.content;
+    if (typeof content === "string" && content.trim()) {
+      const match = content.match(/```json\s*([\s\S]*?)```|({[\s\S]*})/i);
+      const candidate = match?.[1] ?? match?.[2] ?? content;
+      return JSON.parse(candidate);
+    }
+
+    throw new Error("AI did not return structured data.");
   });
 
 export const createAccount = createServerFn({ method: "POST" })

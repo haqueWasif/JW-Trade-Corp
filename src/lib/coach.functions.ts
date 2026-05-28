@@ -2,6 +2,64 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
+
+const APP_TIMEZONE = "Asia/Dhaka";
+
+function getCurrentTradingContext() {
+  const now = new Date();
+
+  const currentDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+
+  const currentTime = new Intl.DateTimeFormat("en-GB", {
+    timeZone: APP_TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIMEZONE,
+    weekday: "long",
+  }).format(now);
+
+  return `# CURRENT RUNTIME CONTEXT
+- Current date: ${currentDate}
+- Current day: ${weekday}
+- Current time: ${currentTime}
+- Timezone: ${APP_TIMEZONE}
+- UTC timestamp: ${now.toISOString()}
+
+CRITICAL DATE RULES:
+- Treat the current date above as the real current date.
+- Never infer today's date from the latest trade/review/checklist date.
+- If the latest recorded trade is dated before the current date, call it the latest recorded trade, not today's trade.
+- If the user asks about today and there are no rows dated ${currentDate}, say today's data is missing/empty.
+- Always distinguish between today, yesterday, latest recorded session, and last trading day.`;
+}
+
+async function parseGeminiResponse(res: Response) {
+  const rawText = await res.text();
+
+  if (res.status === 429) throw new Error("Gemini rate limit reached. Try again in a minute.");
+  if (res.status === 402) throw new Error("Gemini quota/credits exhausted.");
+
+  if (!res.ok) {
+    console.error("Gemini coach request failed:", {
+      status: res.status,
+      statusText: res.statusText,
+      body: rawText,
+    });
+    throw new Error(`AI request failed: ${res.status} ${rawText}`);
+  }
+
+  return JSON.parse(rawText);
+}
+
 // Quick-action prompts (chat mode)
 const QUICK_PROMPTS: Record<string, string> = {
   today: "Analyze today's trades. Summarize performance, emotional state, mistakes, and what to do tomorrow.",
@@ -22,7 +80,9 @@ FORMATTING (STRICT):
 - Use --- horizontal rules to separate major sections.
 - Never output raw HTML. Never wrap the whole response in a code block.`;
 
-const CHAT_SYSTEM = `You are an elite prop-firm trading coach. Adapt to the trader's chosen strategy and session (which may be ICT/PO3, SMC, supply & demand, breakout, mean reversion, or anything else they describe). Do not assume a specific model — read the user's message, attachments, and trade history to infer which framework they're using, then critique within that framework. Be direct, specific, quantitative. Use R-multiples and dollar amounts. Surface rule breaches loudly. Keep responses under 450 words.
+const CHAT_SYSTEM = `You are an elite prop-firm trading coach. Adapt to the trader's chosen strategy and session (which may be ICT/PO3, SMC, supply & demand, breakout, mean reversion, or anything else they describe). Do not assume a specific model — read the user's message, attachments, and trade history to infer which framework they're using, then critique within that framework. Be direct, specific, quantitative. Use R-multiples and dollar amounts. Surface rule breaches loudly. Keep responses under 650 words when needed for detailed coaching, but stay structured and practical.
+
+CRITICAL DATE HANDLING: Every response receives a CURRENT RUNTIME CONTEXT system message. Treat that date as authoritative. Do not treat the most recent trade date as today unless it exactly matches the current date.
 
 When the user attaches chart screenshots, READ THE CHART CAREFULLY: identify HTF bias, liquidity pools, FVGs, OBs, displacement, MSS, and judge entry quality based on what you actually see.
 
@@ -49,7 +109,7 @@ When you analyze, output in this exact structure:
 - **Trader's Plan Critique** (quote/paraphrase their written plan, then validate or challenge it specifically)
 - **Verdict** — TAKE / SKIP / WAIT, with one-line reason
 
-Be willing to say SKIP. Never validate a weak setup.${FORMATTING_RULES}`;
+Be willing to say SKIP. Never validate a weak setup. Treat the CURRENT RUNTIME CONTEXT system message date/time as authoritative for "today", market session timing, and whether a trade belongs to today.${FORMATTING_RULES}`;
 
 const AttachmentSchema = z.object({
   name: z.string().max(200),
@@ -218,7 +278,7 @@ export const sendCoachMessage = createServerFn({ method: "POST" })
 
     // Build system + context. Context only injected on first message of the conversation.
     const systemPrompt = data.kind === "pre_trade" ? PRETRADE_SYSTEM : CHAT_SYSTEM;
-    const messages: any[] = [{ role: "system", content: systemPrompt }];
+    const messages: any[] = [{ role: "system", content: `${getCurrentTradingContext()}\n\n${systemPrompt}` }];
 
     if (prior.length === 0) {
       const ctx = await buildContextBlock(supabase, userId);
@@ -244,22 +304,16 @@ export const sendCoachMessage = createServerFn({ method: "POST" })
       attachments: attachments.length ? attachments.map((a) => ({ name: a.name, mimeType: a.mimeType })) : null,
     });
 
-    const hasImages = attachments.some((a) => a.mimeType.startsWith("image/") || a.mimeType === "application/pdf");
-
     const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: hasImages ? "gemini-2.5-pro" : "gemini-2.5-flash",
+        model: "gemini-2.5-flash",
         messages,
       }),
     });
 
-    if (res.status === 429) throw new Error("Rate limit reached. Try again in a minute.");
-    if (res.status === 402) throw new Error("AI credits exhausted. Add credits in Workspace Settings.");
-    if (!res.ok) throw new Error(`AI request failed: ${res.status}`);
-
-    const json = await res.json();
+    const json = await parseGeminiResponse(res);
     const reply: string = json.choices?.[0]?.message?.content ?? "(no response)";
 
     await supabase.from("coach_messages").insert({
