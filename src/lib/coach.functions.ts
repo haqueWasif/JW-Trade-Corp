@@ -186,8 +186,8 @@ export const sendCoachMessage = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("AI not configured. LOVABLE_API_KEY missing.");
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("AI not configured. GEMINI_API_KEY missing.");
 
     const attachments = data.attachments ?? [];
 
@@ -246,7 +246,7 @@ export const sendCoachMessage = createServerFn({ method: "POST" })
 
     const hasImages = attachments.some((a) => a.mimeType.startsWith("image/") || a.mimeType === "application/pdf");
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({

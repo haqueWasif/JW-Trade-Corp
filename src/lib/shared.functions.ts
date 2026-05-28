@@ -70,7 +70,7 @@ export const askSharedCoach = createServerFn({ method: "POST" })
 
     const payload = `# QUESTION\n${data.prompt}\n\n# ACCOUNT\n${JSON.stringify(account)}\n\n# RULES\n${JSON.stringify(rules)}\n\n# RECENT TRADES (30)\n${JSON.stringify(trades)}\n\n# RECENT REVIEWS (7)\n${JSON.stringify(reviews)}`;
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({

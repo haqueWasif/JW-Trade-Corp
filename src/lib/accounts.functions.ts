@@ -30,12 +30,12 @@ export const parseAccountSpec = createServerFn({ method: "POST" })
     z.object({ description: z.string().min(3).max(1000) }).parse(input),
   )
   .handler(async ({ data }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("AI not configured.");
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("AI not configured. GEMINI_API_KEY missing.");
 
     const system = `You parse trader-supplied prop-firm account specs into structured JSON. Use the firm knowledge below to fill defaults the user didn't mention. If something is genuinely unknown, leave nullable fields null. Be precise with numbers.\n\n${FIRM_KNOWLEDGE}`;
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
